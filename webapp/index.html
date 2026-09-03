@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Харчування на тиждень</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --bg:#fbf7f0;
+    --ink:#28251f;
+    --muted:#7a746a;
+    --line:#e7dfd2;
+    --card:#ffffff;
+    --pick:#3a7d44;        /* обрано — глибокий зелений */
+    --pick-soft:#eaf3ea;
+    --staff:#c0392b;       /* зміна персоналу — червоний */
+    --staff-soft:#fbeae8;
+    --lock:#b8b0a2;
+    --shadow:0 1px 2px rgba(40,37,31,.06);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    font-size:16px;line-height:1.45;padding-bottom:96px;
+  }
+  header{
+    position:sticky;top:0;z-index:10;background:var(--bg);
+    padding:16px 18px 10px;border-bottom:1px solid var(--line);
+  }
+  header h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em}
+  header p{margin:3px 0 0;color:var(--muted);font-size:13px}
+
+  /* Вкладки днів */
+  .days{display:flex;gap:6px;overflow-x:auto;padding:12px 14px 4px;scrollbar-width:none}
+  .days::-webkit-scrollbar{display:none}
+  .day-tab{
+    flex:0 0 auto;padding:8px 14px;border-radius:11px;background:var(--card);
+    border:1px solid var(--line);font-size:14px;font-weight:600;color:var(--muted);
+    cursor:pointer;white-space:nowrap;box-shadow:var(--shadow);transition:.15s;
+  }
+  .day-tab.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .day-tab.locked::after{content:" 🔒";font-size:12px}
+
+  main{padding:8px 14px 0}
+  .cat{margin:18px 0 10px}
+  .cat h2{
+    margin:0 0 8px;font-size:13px;font-weight:700;color:var(--muted);
+    display:flex;align-items:center;gap:8px;
+  }
+  .cat h2 .count{
+    background:var(--pick-soft);color:var(--pick);border-radius:20px;
+    padding:1px 9px;font-size:12px;font-weight:700;
+  }
+
+  .dish{
+    display:flex;align-items:flex-start;gap:12px;background:var(--card);
+    border:1px solid var(--line);border-radius:13px;padding:13px 14px;
+    margin-bottom:8px;box-shadow:var(--shadow);cursor:pointer;transition:.12s;
+  }
+  .dish:active{transform:scale(.99)}
+  .dish.on{border-color:var(--pick);background:var(--pick-soft)}
+  .dish.staff{border-color:var(--staff);background:var(--staff-soft)}
+  .box{
+    flex:0 0 auto;width:24px;height:24px;border-radius:7px;margin-top:1px;
+    border:2px solid var(--line);display:flex;align-items:center;justify-content:center;
+    font-size:15px;color:#fff;transition:.12s;
+  }
+  .dish.on .box{background:var(--pick);border-color:var(--pick)}
+  .dish.staff.on .box{background:var(--staff);border-color:var(--staff)}
+  .dish .name{flex:1;font-size:15px;font-weight:500}
+  .dish .allerg{display:block;margin-top:3px;color:var(--muted);font-size:12px;font-weight:400}
+  .dish.staff .flag{
+    display:inline-block;margin-top:4px;font-size:11px;font-weight:700;
+    color:var(--staff);
+  }
+
+  .locked-note{
+    text-align:center;color:var(--lock);font-size:13px;
+    padding:24px 12px;border:1px dashed var(--line);border-radius:13px;margin-top:10px;
+  }
+  .empty{color:var(--muted);font-size:14px;padding:8px 2px}
+
+  /* Кнопка збереження */
+  .savebar{
+    position:fixed;left:0;right:0;bottom:0;padding:12px 14px 20px;
+    background:linear-gradient(to top,var(--bg) 70%,transparent);
+  }
+  .save{
+    width:100%;border:none;border-radius:14px;padding:16px;font-size:16px;
+    font-weight:700;color:#fff;background:var(--pick);cursor:pointer;
+    box-shadow:0 3px 10px rgba(58,125,68,.28);transition:.15s;
+  }
+  .save:disabled{background:var(--lock);box-shadow:none}
+  .save.saved{background:var(--ink)}
+
+  .toast{
+    position:fixed;left:50%;bottom:88px;transform:translateX(-50%) translateY(20px);
+    background:var(--ink);color:#fff;padding:11px 18px;border-radius:11px;
+    font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:.25s;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .loading{text-align:center;padding:60px 20px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Харчування на тиждень</h1>
+  <p id="sub">Завантаження…</p>
+</header>
+
+<div class="days" id="days"></div>
+<main id="main"><div class="loading">Готуємо меню…</div></main>
+
+<div class="savebar">
+  <button class="save" id="save" disabled>Зберегти вибір</button>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+
+const params = new URLSearchParams(location.search);
+const USER_ID = params.get("user_id");
+const WEEK = params.get("week");
+
+let DATA = null;          // відповідь /api/menu
+let activeDay = 0;        // індекс активного дня
+const CATS = ["Сніданок","Обід","Вечеря"];
+
+async function load(){
+  const r = await fetch(`/api/menu?week=${WEEK}&user_id=${encodeURIComponent(USER_ID)}`);
+  DATA = await r.json();
+  document.getElementById("sub").textContent = `Тиждень №${DATA.week} · оберіть будь-яку кількість страв`;
+  // перший незаблокований день — активний
+  const firstOpen = DATA.days.findIndex(d => !d.locked);
+  activeDay = firstOpen >= 0 ? firstOpen : 0;
+  renderTabs();
+  renderDay();
+}
+
+function renderTabs(){
+  const el = document.getElementById("days");
+  el.innerHTML = "";
+  DATA.days.forEach((d,i)=>{
+    const t = document.createElement("button");
+    t.className = "day-tab" + (i===activeDay?" active":"") + (d.locked?" locked":"");
+    t.textContent = d.day;
+    t.onclick = ()=>{ activeDay=i; renderTabs(); renderDay(); };
+    el.appendChild(t);
+  });
+}
+
+function renderDay(){
+  const d = DATA.days[activeDay];
+  const main = document.getElementById("main");
+  const save = document.getElementById("save");
+  main.innerHTML = "";
+
+  if(d.locked){
+    main.innerHTML = `<div class="locked-note">🔒 Вибір на ${d.day} (${d.date}) закрито.<br>Редагування було доступне до 00:00 цього дня.<br>Щоб змінити — зверніться до вчителя.</div>`;
+    save.disabled = true; save.textContent = "День закрито"; save.className="save";
+    return;
+  }
+
+  CATS.forEach(cat=>{
+    const items = (d.categories[cat]||[]);
+    if(!items.length) return;
+    const chosen = new Set(d.chosen[cat]||[]);
+    const wrap = document.createElement("section");
+    wrap.className = "cat";
+    const cnt = chosen.size ? `<span class="count">${chosen.size}</span>` : "";
+    wrap.innerHTML = `<h2>${cat} ${cnt}</h2>`;
+
+    items.forEach(it=>{
+      const on = chosen.has(it.dish);
+      const staff = d.staff_modified && on; // страва, додана персоналом, підсвічується
+      const row = document.createElement("div");
+      row.className = "dish" + (on?" on":"") + (staff?" staff":"");
+      const allerg = it.allergens?.length
+        ? `<span class="allerg">Містить: ${it.allergens.join(", ")}</span>` : "";
+      const flag = staff ? `<span class="flag">● змінено вчителем/адміном</span>` : "";
+      row.innerHTML = `
+        <div class="box">${on?"✓":""}</div>
+        <div class="name">${it.dish}${allerg}${flag}</div>`;
+      row.onclick = ()=>toggle(cat,it.dish,row);
+      wrap.appendChild(row);
+    });
+    main.appendChild(wrap);
+  });
+
+  save.disabled = false;
+  save.className = "save";
+  save.textContent = "Зберегти вибір";
+}
+
+function toggle(cat, dish, row){
+  const d = DATA.days[activeDay];
+  d.chosen[cat] = d.chosen[cat] || [];
+  const i = d.chosen[cat].indexOf(dish);
+  if(i>=0){ d.chosen[cat].splice(i,1); }
+  else { d.chosen[cat].push(dish); }
+  // локальне оновлення без перемальовування всього
+  renderDay();
+}
+
+document.getElementById("save").onclick = async ()=>{
+  const d = DATA.days[activeDay];
+  const btn = document.getElementById("save");
+  btn.disabled = true; btn.textContent = "Зберігаємо…";
+  try{
+    const r = await fetch("/api/order",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({user_id:USER_ID,week:Number(WEEK),day:d.day,dishes:d.chosen})
+    });
+    if(r.status===423){ showToast("День уже закрито 🔒"); await load(); return; }
+    if(!r.ok) throw new Error();
+    btn.className="save saved"; btn.textContent="Збережено ✓";
+    showToast("Вибір на "+d.day+" збережено");
+    if(tg) tg.HapticFeedback?.notificationOccurred("success");
+    setTimeout(()=>{ btn.className="save"; btn.textContent="Зберегти вибір"; btn.disabled=false; },1600);
+  }catch(e){
+    btn.disabled=false; btn.textContent="Зберегти вибір";
+    showToast("Не вдалося зберегти. Спробуйте ще раз");
+  }
+};
+
+let toastT;
+function showToast(msg){
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.className="toast show";
+  clearTimeout(toastT); toastT=setTimeout(()=>t.className="toast",2200);
+}
+
+load().catch(()=>{
+  document.getElementById("main").innerHTML =
+    '<div class="locked-note">Не вдалося завантажити меню. Закрийте та відкрийте вікно ще раз.</div>';
+});
+</script>
+</body>
+</html>
