@@ -9,6 +9,9 @@ from zoneinfo import ZoneInfo
 # --- Секрети (Railway Variables) ---
 BOT_TOKEN = os.environ["BOT_TOKEN"]                      # від @BotFather
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]            # ключ Google Gemini
+# Модель Gemini для парсингу PDF. Можна змінити через env, якщо Google
+# оновить модель (напр. gemini-3.7-flash), без правки коду.
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 GOOGLE_CREDENTIALS = os.environ["GOOGLE_CREDENTIALS"]    # JSON сервісного акаунта (як рядок)
 
 # ID папки/таблиці Google Sheets у папці SigmaFoodRezerv.
@@ -23,6 +26,11 @@ BASE_URL = os.environ["BASE_URL"].rstrip("/")
 # Chat ID головного адміністратора (початковий суперкористувач).
 # Вписується вручну один раз; далі адмін додає вчителів через бота.
 ADMIN_CHAT_ID = int(os.environ["ADMIN_CHAT_ID"])
+
+# Секретний шлях для webhook (щоб не класти токен із двокрапкою в URL).
+# Формується з токена детерміновано, тож стабільний між рестартами.
+import hashlib as _hashlib
+WEBHOOK_SECRET = _hashlib.sha256(BOT_TOKEN.encode()).hexdigest()[:32]
 
 # --- Константи ---
 TZ = ZoneInfo("Europe/Kyiv")   # часовий пояс для дедлайну 00:00
