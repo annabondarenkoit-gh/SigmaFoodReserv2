@@ -40,9 +40,48 @@ _HEADERS = {
 }
 
 
+def _load_credentials_info():
+    """
+    Розбирає GOOGLE_CREDENTIALS. Підтримує два формати:
+      1. Прямий JSON сервісного акаунта (починається з '{').
+      2. Той самий JSON, закодований у base64 (обхід для Railway,
+         який іноді ламає багаторядкові значення з переносами в private_key).
+    Дає зрозуміле повідомлення замість сирого трейсбека.
+    """
+    import base64
+
+    raw = (config.GOOGLE_CREDENTIALS or "").strip()
+    if not raw:
+        raise RuntimeError(
+            "Змінна GOOGLE_CREDENTIALS порожня. У Railway → Variables вставте "
+            "ВЕСЬ JSON сервісного акаунта (від '{' до '}'), а не лише private_key."
+        )
+
+    # base64-варіант (не починається з '{', але декодується у JSON)
+    if not raw.startswith("{"):
+        try:
+            decoded = base64.b64decode(raw).decode("utf-8").strip()
+            if decoded.startswith("{"):
+                raw = decoded
+        except Exception:
+            pass
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        head = raw[:40].replace("\n", "\\n")
+        raise RuntimeError(
+            "GOOGLE_CREDENTIALS не є валідним JSON сервісного акаунта. "
+            f"Значення починається з: '{head}...'. "
+            "Має бути ВЕСЬ вміст .json-файлу (з полями type, project_id, "
+            "private_key, client_email...), а не окремий private_key. "
+            "Альтернатива: закодуйте файл у base64 і вставте результат."
+        ) from e
+
+
 class SheetsService:
     def __init__(self):
-        creds_info = json.loads(config.GOOGLE_CREDENTIALS)
+        creds_info = _load_credentials_info()
         creds = Credentials.from_service_account_info(creds_info, scopes=_SCOPES)
         self._gc = gspread.authorize(creds)
         self._ss = self._gc.open_by_key(config.SPREADSHEET_ID)
