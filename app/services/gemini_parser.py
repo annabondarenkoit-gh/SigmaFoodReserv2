@@ -38,7 +38,7 @@ class GeminiParser:
     def parse_menu(self, pdf_bytes: bytes) -> list[dict]:
         """Повертає список страв (без Полуденка)."""
         response = self._client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=config.GEMINI_MODEL,
             contents=[
                 types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
                 _PROMPT,
